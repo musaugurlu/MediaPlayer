@@ -4,7 +4,6 @@ class Media {
     [string]      $Type
     [MediaStatus] $Status = [MediaStatus]::NotPlaying
     [int]         $Duration
-    [int]         $Order
     [bool]        $Loop = 0
 	
     Media() {
@@ -29,12 +28,12 @@ class Media {
 class Playlist {
     [int]      $Id
     [string]   $Name
-    [Media[]]  $Media
+    [System.Collections.Generic.List[Media]] $Songs
     [string]   $Path
     [PlayMode] $Mode = [PlayMode]::Sequential
 
     Playlist() {
-
+        
     }
 
     [void] Play() {
@@ -97,30 +96,41 @@ function New-Playlist {
     }
 	
     process {
+        Write-Verbose "Creating playlist.."
+        $NewPlaylist = New-EmptyPlaylist($Name)
+
         Write-Verbose 'Checking if $FolderLocation is given'
-        if ([string]::IsNullOrEmpty($FolderLocation)) {
-            Write-Verbose '$FolderLocation is not given. Empty playlist is being created.'
-			New-EmptyPlaylist($Name)
-			
-        } else {
-			if (Test-Path -Path $FolderLocation) {
-				$AllMedia = Get-ChildItem -Path $FolderLocation -Recurse -Include *.mp3,*.wav
+        if (![string]::IsNullOrEmpty($FolderLocation)) {
+            {
+                if (Test-Path -Path $FolderLocation) {
+                    $AllMedia = Get-ChildItem -Path $FolderLocation -Recurse -Include *.mp3, *.wav
 
-				if ($AllMedia.FullName.count -gt 0) {
-					
-				} else {
-					Write-Verbose "The folder given has no media files. Empty playlist will be created"
-					New-EmptyPlaylist($Name)
-				}
+                    if ($AllMedia.FullName.count -gt 0) {
+                        foreach ($Media in $AllMedia) {
+                            $NewMedia = [Meadia]::new()
+                            $NewMedia.Name = $Media.Name
+                            $NewMedia.Path = $Media.FullName
+                            $NewMedia.Type = ($Media.Extension.split("."))[1]
+                            $NewMedia.Duration = Get-Duration($Media.FullName) 
+                            
+                            $NewPlaylist.$Songs += $NewMedia
+                        }
+                    }
+                    else {
+                        Write-Warning "The folder given has no media files. No media has been added."
+                    }
 
-			} else {
-				Write-Error "Invalid folder path `"$FolderLocation`"."
-				break
-			}
-		}
+                }
+                else {
+                    Write-Error "Invalid folder path `"$FolderLocation`"."
+                    break
+                }
+            }
+        }
     }
 	
     end {
+        Write-Output $NewPlaylist
     }
 }
 
@@ -217,17 +227,31 @@ function Add-ToPlaylist {
 }
 
 function New-EmptyPlaylist ($Name) {
-	$NewPlaylist = [Playlist]::new()
-	$NewPlaylist.Id = ((Get-Playlist | Sort-Object -Property Id | Select-Object -Last 1 -Property Id)[0].Id + 1)
-	$NewPlaylist.Name = $Name
+    $NewPlaylist = [Playlist]::new()
+    $NewPlaylist.Id = ((Get-Playlist | Sort-Object -Property Id | Select-Object -Last 1 -Property Id)[0].Id + 1)
+    $NewPlaylist.Name = $Name
 
-	Write-Verbose 'New playlist is being written in to playlist.list'
-	try {
-		$NewPlaylist | Export-Csv -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list" -NoTypeInformation -Append
-	}
-	catch {
-		Write-Error "Couldn't write in `"$($env:TEMP + '\LuckyMediaPlayer\Playlists.list')`". Make sure you have sufficient permission to write in the folder`"."
-	}
+    Write-Verbose 'New playlist is being written in to playlist.list'
+    try {
+        $NewPlaylist | Export-Csv -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list" -NoTypeInformation -Append -Force
+    }
+    catch {
+        Write-Error "Couldn't write in `"$($env:TEMP + '\LuckyMediaPlayer\Playlists.list')`". Make sure you have sufficient permission to write in the folder`"."
+        break
+    }
 
-	return $NewPlaylist
+    return $NewPlaylist
+}
+
+function Get-Duration ($Path) {
+    $shell = New-Object -COMObject Shell.Application
+    $folder = Split-Path $Path
+    $file = Split-Path $Path -Leaf
+    $shellfolder = $shell.Namespace($folder)
+    $shellfile = $shellfolder.ParseName($file)
+
+    $Duration = $shellfolder.GetDetailsOf($shellfile, 27);
+    $Time = $Duration.split(":")
+    #convert string type duration to int type seconds
+    return (([int]$Time[0]*60*60)+([int]$Time[1]*60)+([int]$Time[2]))
 }
