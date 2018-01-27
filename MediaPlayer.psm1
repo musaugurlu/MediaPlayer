@@ -78,10 +78,10 @@ function New-Playlist {
 	
     begin {
         Write-Verbose "Checking if Playlist.list file is exist in `"$($env:TEMP + "\LuckyMediaPlayer")`" folder"
-        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list") {
+        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml") {
 			
             Write-Verbose "The file exists. Checking if the name `"$Name`" is given to another playlist"
-            $Playlist = Import-Csv -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list"
+            [xml] $Playlist = Import-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml"
             if ($Playlist | Where-Object {$_.Name -eq $Name}) {
                 Write-Error "Invalid Name. Another playlist is already associated with this name `"$Name`""
                 break
@@ -91,7 +91,7 @@ function New-Playlist {
         }
         else {
             Write-Verbose "The file Playlist.list is not exist. Creating a new one in $($env:TEMP + "\LuckyMediaPlayer") folder."
-            New-Item -Path "$env:TEMP\LuckyMediaPlayer\" -Name "Playlists.list" -ItemType File -Force -Confirm:$false | Out-Null
+            New-Item -Path "$env:TEMP\LuckyMediaPlayer\" -Name "Playlists.xml" -ItemType File -Force -Confirm:$false | Out-Null
         }
     }
 	
@@ -113,6 +113,8 @@ function New-Playlist {
                         $NewMedia.Duration = Get-Duration($Media.FullName) 
                             
                         $NewPlaylist.Songs += $NewMedia
+
+                        Save-Playlist($NewPlaylist)
                     }
                 }
                 else {
@@ -144,8 +146,8 @@ function Get-Playlist {
     }
 	
     process {
-        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list") {
-            $PlayLists = Import-Csv -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list"
+        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml") {
+            $PlayLists = Get-Content -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml" -Raw | ConvertFrom-Json
             if ($PlayLists.name.count -gt 0) {
                 foreach ($PlayList in $PlayLists) {
                     $NewPlaylist = [Playlist]::new()
@@ -156,13 +158,11 @@ function Get-Playlist {
                 }
             }
             else {
-                $NewPlaylist = [Playlist]::new()
-                Write-Output $NewPlaylist
+                Write-Output "No Playlist found"
             } 
         }
         else {
-            $NewPlaylist = [Playlist]::new()
-            Write-Output $NewPlaylist
+            Write-Output "No Playlist found"
         }
     }
 	
@@ -231,10 +231,10 @@ function New-EmptyPlaylist ($Name) {
 
     Write-Verbose 'New playlist is being written in to playlist.list'
     try {
-        $NewPlaylist | Export-Csv -Path "$env:TEMP\LuckyMediaPlayer\Playlists.list" -NoTypeInformation -Append -Force
+        $NewPlaylist | Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml" -Append -Force
     }
     catch {
-        Write-Error "Couldn't write in `"$($env:TEMP + '\LuckyMediaPlayer\Playlists.list')`". Make sure you have sufficient permission to write in the folder`"."
+        Write-Error "Couldn't write in `"$($env:TEMP + '\LuckyMediaPlayer\Playlists.xml')`". Make sure you have sufficient permission to write in the folder`"."
         break
     }
 
@@ -253,4 +253,16 @@ function Get-Duration ($Path) {
     $Time = $Duration.split(":")
     #convert string type duration to int type seconds
     return (([int]$Time[0] * 60 * 60) + ([int]$Time[1] * 60) + ([int]$Time[2]))
+}
+
+function Save-Playlist([Playlist] $NewPlaylist) {
+    $CurrentPlaylist = Import-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml"
+    
+    foreach ($item in $CurrentPlaylist) {
+        if ($item.id == $NewPlaylist.Id) {
+            $item = $NewPlaylist            
+        }
+    }
+    
+    $CurrentPlaylist | Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml" -Force
 }
