@@ -1,5 +1,5 @@
 class Media {
-    [string]      $FullName
+    [string]      $Name
     [string]      $Path
     [string]      $Type
     [MediaStatus] $Status = [MediaStatus]::NotPlaying
@@ -101,30 +101,28 @@ function New-Playlist {
 
         Write-Verbose 'Checking if $FolderLocation is given'
         if (![string]::IsNullOrEmpty($FolderLocation)) {
-            {
-                if (Test-Path -Path $FolderLocation) {
-                    $AllMedia = Get-ChildItem -Path $FolderLocation -Recurse -Include *.mp3, *.wav
+            if (Test-Path -Path $FolderLocation) {
+                $AllMedia = Get-ChildItem -Path $FolderLocation -Recurse -Include *.mp3, *.wav
 
-                    if ($AllMedia.FullName.count -gt 0) {
-                        foreach ($Media in $AllMedia) {
-                            $NewMedia = [Meadia]::new()
-                            $NewMedia.Name = $Media.Name
-                            $NewMedia.Path = $Media.FullName
-                            $NewMedia.Type = ($Media.Extension.split("."))[1]
-                            $NewMedia.Duration = Get-Duration($Media.FullName) 
+                if ($AllMedia.FullName.count -gt 0) {
+                    foreach ($Media in $AllMedia) {
+                        $NewMedia = [Media]::new()
+                        $NewMedia.Name = $Media.Name
+                        $NewMedia.Path = $Media.FullName
+                        $NewMedia.Type = ($Media.Extension.split("."))[1]
+                        $NewMedia.Duration = Get-Duration($Media.FullName) 
                             
-                            $NewPlaylist.$Songs += $NewMedia
-                        }
+                        $NewPlaylist.Songs += $NewMedia
                     }
-                    else {
-                        Write-Warning "The folder given has no media files. No media has been added."
-                    }
-
                 }
                 else {
-                    Write-Error "Invalid folder path `"$FolderLocation`"."
-                    break
+                    Write-Warning "The folder given has no media files. No media has been added."
                 }
+
+            }
+            else {
+                Write-Error "Invalid folder path `"$FolderLocation`"."
+                break
             }
         }
     }
@@ -244,6 +242,7 @@ function New-EmptyPlaylist ($Name) {
 }
 
 function Get-Duration ($Path) {
+    # Part of this code copied from https://superuser.com/questions/704575/get-song-duration-from-an-mp3-file-in-a-script
     $shell = New-Object -COMObject Shell.Application
     $folder = Split-Path $Path
     $file = Split-Path $Path -Leaf
@@ -253,5 +252,5 @@ function Get-Duration ($Path) {
     $Duration = $shellfolder.GetDetailsOf($shellfile, 27);
     $Time = $Duration.split(":")
     #convert string type duration to int type seconds
-    return (([int]$Time[0]*60*60)+([int]$Time[1]*60)+([int]$Time[2]))
+    return (([int]$Time[0] * 60 * 60) + ([int]$Time[1] * 60) + ([int]$Time[2]))
 }
