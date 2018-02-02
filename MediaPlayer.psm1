@@ -1,3 +1,5 @@
+#require version 5
+
 class Media {
     [string]      $Name
     [string]      $Path
@@ -28,7 +30,7 @@ class Media {
 class Playlist {
     [int]      $Id
     [string]   $Name
-    [System.Collections.Generic.List[Media]] $Songs
+    [Media[]] $Songs
     [string]   $Path
     [PlayMode] $Mode = [PlayMode]::Sequential
 
@@ -77,27 +79,17 @@ function New-Playlist {
     )
 	
     begin {
-        Write-Verbose "Checking if Playlist.list file is exist in `"$($env:TEMP + "\LuckyMediaPlayer")`" folder"
-        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml") {
+        Write-Verbose "Checking if Playlist file is exist in `"$($env:TEMP + "\LuckyMediaPlayer\Playlists")`" folder"
+        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists\$Name.xml") {
 			
-            Write-Verbose "The file exists. Checking if the name `"$Name`" is given to another playlist"
-            [xml] $Playlist = Import-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml"
-            if ($Playlist | Where-Object {$_.Name -eq $Name}) {
-                Write-Error "Invalid Name. Another playlist is already associated with this name `"$Name`""
-                break
-            }
-
-            Write-Verbose "The name `"$Name`" is valid"
-        }
-        else {
-            Write-Verbose "The file Playlist.list is not exist. Creating a new one in $($env:TEMP + "\LuckyMediaPlayer") folder."
-            New-Item -Path "$env:TEMP\LuckyMediaPlayer\" -Name "Playlists.xml" -ItemType File -Force -Confirm:$false | Out-Null
-        }
+            Write-Error "Invalid Name. Another playlist is already associated with this name `"$Name`""
+            break
+        } 
     }
 	
     process {
         Write-Verbose "Creating playlist.."
-        $NewPlaylist = New-EmptyPlaylist($Name)
+        New-Item -Path "$env:TEMP\LuckyMediaPlayer\Playlists\" -Name "$Name.xml" -ItemType File -Force -Confirm:$false | Out-Null
 
         Write-Verbose 'Checking if $FolderLocation is given'
         if (![string]::IsNullOrEmpty($FolderLocation)) {
@@ -105,6 +97,11 @@ function New-Playlist {
                 $AllMedia = Get-ChildItem -Path $FolderLocation -Recurse -Include *.mp3, *.wav
 
                 if ($AllMedia.FullName.count -gt 0) {
+
+                    $NewPlaylist = [Playlist]::new()
+                    $NewPlaylist.Name = $Name
+                    $NewPlaylist.Path = (Resolve-Path -Path $FolderLocation).Path
+
                     foreach ($Media in $AllMedia) {
                         $NewMedia = [Media]::new()
                         $NewMedia.Name = $Media.Name
@@ -113,9 +110,9 @@ function New-Playlist {
                         $NewMedia.Duration = Get-Duration($Media.FullName) 
                             
                         $NewPlaylist.Songs += $NewMedia
-
-                        Save-Playlist($NewPlaylist)
                     }
+
+                    Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists\$Name.xml" -InputObject $NewPlaylist
                 }
                 else {
                     Write-Warning "The folder given has no media files. No media has been added."
@@ -146,23 +143,14 @@ function Get-Playlist {
     }
 	
     process {
-        if (Test-Path -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml") {
-            $PlayLists = Get-Content -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml" -Raw | ConvertFrom-Json
-            if ($PlayLists.name.count -gt 0) {
-                foreach ($PlayList in $PlayLists) {
-                    $NewPlaylist = [Playlist]::new()
-                    $NewPlaylist.Id = $PlayList.Id
-                    $NewPlaylist.Name = $PlayList.Name
+        if ([string]::IsNullOrEmpty($Name)) {
+            $Playlists = Get-ChildItem -Path "$env:TEMP\LuckyMediaPlayer\Playlists\" -Filter *.xml
 
-                    Write-Output $NewPlaylist
-                }
+            foreach ($Item in $Playlists) {
+                [Playlist] $Playlist = Import-Clixml -Path $Item.FullName
+
+                Write-Output $Playlist
             }
-            else {
-                Write-Output "No Playlist found"
-            } 
-        }
-        else {
-            Write-Output "No Playlist found"
         }
     }
 	
@@ -224,23 +212,6 @@ function Add-ToPlaylist {
     }
 }
 
-function New-EmptyPlaylist ($Name) {
-    $NewPlaylist = [Playlist]::new()
-    $NewPlaylist.Id = ((Get-Playlist | Sort-Object -Property Id | Select-Object -Last 1 -Property Id)[0].Id + 1)
-    $NewPlaylist.Name = $Name
-
-    Write-Verbose 'New playlist is being written in to playlist.list'
-    try {
-        $NewPlaylist | Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml" -Append -Force
-    }
-    catch {
-        Write-Error "Couldn't write in `"$($env:TEMP + '\LuckyMediaPlayer\Playlists.xml')`". Make sure you have sufficient permission to write in the folder`"."
-        break
-    }
-
-    return $NewPlaylist
-}
-
 function Get-Duration ($Path) {
     # Part of this code copied from https://superuser.com/questions/704575/get-song-duration-from-an-mp3-file-in-a-script
     $shell = New-Object -COMObject Shell.Application
@@ -253,16 +224,4 @@ function Get-Duration ($Path) {
     $Time = $Duration.split(":")
     #convert string type duration to int type seconds
     return (([int]$Time[0] * 60 * 60) + ([int]$Time[1] * 60) + ([int]$Time[2]))
-}
-
-function Save-Playlist([Playlist] $NewPlaylist) {
-    $CurrentPlaylist = Import-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml"
-    
-    foreach ($item in $CurrentPlaylist) {
-        if ($item.id == $NewPlaylist.Id) {
-            $item = $NewPlaylist            
-        }
-    }
-    
-    $CurrentPlaylist | Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists.xml" -Force
 }
