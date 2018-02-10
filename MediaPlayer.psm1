@@ -7,13 +7,14 @@ class Media {
     [MediaStatus] $Status = [MediaStatus]::NotPlaying
     [int]         $Duration
     [bool]        $Loop = 0
+    [int]         $PlaylistOrder
 	
     Media() {
 
     }
 
     [void] Play() {
-
+        global:Start-Music($this.Path)
     }
 
     [void] Pause() {
@@ -88,20 +89,21 @@ function New-Playlist {
     }
 	
     process {
-        Write-Verbose "Creating playlist.."
-        New-Item -Path "$env:TEMP\LuckyMediaPlayer\Playlists\" -Name "$Name.xml" -ItemType File -Force -Confirm:$false | Out-Null
+        # Write-Verbose "Creating playlist.."
+        # New-Item -Path "$env:TEMP\LuckyMediaPlayer\Playlists\" -Name "$Name.xml" -ItemType File -Force -Confirm:$false | Out-Null
 
         Write-Verbose 'Checking if $FolderLocation is given'
         if (![string]::IsNullOrEmpty($FolderLocation)) {
             if (Test-Path -Path $FolderLocation) {
+                
+                $NewPlaylist = [Playlist]::new()
+                $NewPlaylist.Id = [int](Get-PlaylistID)
+                $NewPlaylist.Name = $Name
+                $NewPlaylist.Path = (Resolve-Path -Path $FolderLocation).Path
+
                 $AllMedia = Get-ChildItem -Path $FolderLocation -Recurse -Include *.mp3, *.wav
 
                 if ($AllMedia.FullName.count -gt 0) {
-
-                    $NewPlaylist = [Playlist]::new()
-                    $NewPlaylist.Name = $Name
-                    $NewPlaylist.Path = (Resolve-Path -Path $FolderLocation).Path
-
                     foreach ($Media in $AllMedia) {
                         $NewMedia = [Media]::new()
                         $NewMedia.Name = $Media.Name
@@ -110,14 +112,13 @@ function New-Playlist {
                         $NewMedia.Duration = Get-Duration($Media.FullName) 
                             
                         $NewPlaylist.Songs += $NewMedia
-                    }
-
-                    Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists\$Name.xml" -InputObject $NewPlaylist
-                }
-                else {
+                    } 
+                } else {
                     Write-Warning "The folder given has no media files. No media has been added."
                 }
 
+                New-Item -Path "$env:TEMP\LuckyMediaPlayer\Playlists\" -Name "$Name.xml" -ItemType File -Force -Confirm:$false | Out-Null
+                Export-Clixml -Path "$env:TEMP\LuckyMediaPlayer\Playlists\$Name.xml" -InputObject $NewPlaylist
             }
             else {
                 Write-Error "Invalid folder path `"$FolderLocation`"."
@@ -140,6 +141,10 @@ function Get-Playlist {
     )
 	
     begin {
+        if (-not(Test-Path "$env:TEMP\LuckyMediaPlayer\Playlists\")) {
+            Write-Host "No playlist found!"
+            break
+        }
     }
 	
     process {
@@ -212,6 +217,30 @@ function Add-ToPlaylist {
     }
 }
 
+function Get-PlaylistID {
+    if (-not(Test-Path "$env:TEMP\LuckyMediaPlayer\Playlists\")) {
+        return 1
+    } else {
+        $Items = Get-ChildItem -Path "$env:TEMP\LuckyMediaPlayer\Playlists\" -Filter *.xml
+
+        if ($Items.FullName.count -lt 1) {
+            return 1
+        } else {
+            
+            [Playlist[]] $AllPlaylists = @()
+
+            foreach ($Item in $Items) {
+                [Playlist] $Playlist = Import-Clixml -Path $Item.FullName 
+
+                $AllPlaylists += $Playlist
+            }
+
+            $AllPlaylists = $AllPlaylists | Sort-Object -Property Id
+
+            return ($AllPlaylists[-1].Id + 1)
+        }
+    }
+}
 function Get-Duration ($Path) {
     # Part of this code copied from https://superuser.com/questions/704575/get-song-duration-from-an-mp3-file-in-a-script
     $shell = New-Object -COMObject Shell.Application
@@ -224,4 +253,17 @@ function Get-Duration ($Path) {
     $Time = $Duration.split(":")
     #convert string type duration to int type seconds
     return (([int]$Time[0] * 60 * 60) + ([int]$Time[1] * 60) + ([int]$Time[2]))
+}
+
+function Start-Music ($Path) {
+    Add-Type -AssemblyName presentationCore
+    $filepath = [uri] $Path
+    $global:wmplayer = New-Object System.Windows.Media.MediaPlayer
+    $global:wmplayer.Open($filepath)
+    Start-Sleep 2 # This allows the $global:wmplayer time to load the audio file
+    $duration = $global:wmplayer.NaturalDuration.TimeSpan.TotalSeconds
+    $global:wmplayer.Play()
+    Start-Sleep $duration
+    $global:wmplayer.Stop()
+    $global:wmplayer.Close()
 }
